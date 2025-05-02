@@ -234,10 +234,17 @@ class WebWordCounterGUI:
             
     def run_process_both_formats(self, excel_cmd, word_cmd):
         excel_success = False
+        content_data = None
         
         try:
-            # First run Excel format
-            self.add_log("Step 1: Creating Excel file...")
+            # First run to get content - modified to save content data
+            self.add_log("Step 1: Crawling website and creating Excel file...")
+            
+            # Modify command to include a temp file for storing content
+            temp_json_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_content.json")
+            if "--save-json" not in excel_cmd:
+                excel_cmd.extend(["--save-json", temp_json_file])
+                
             self.process = subprocess.Popen(
                 excel_cmd, 
                 stdout=subprocess.PIPE, 
@@ -257,41 +264,61 @@ class WebWordCounterGUI:
             if self.process.returncode == 0:
                 self.add_log("Excel file created successfully!")
                 excel_success = True
+                
+                # Now modify the Word command to use the same content data
+                if "--load-json" not in word_cmd and os.path.exists(temp_json_file):
+                    word_cmd.extend(["--load-json", temp_json_file])
+                
+                # Now run Word format using the same data
+                self.add_log("\nStep 2: Creating Word document from the same data...")
+                self.process = subprocess.Popen(
+                    word_cmd, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=1
+                )
+                
+                # Read output line by line
+                for line in iter(self.process.stdout.readline, ''):
+                    if line:
+                        self.add_log(line.strip())
+                        
+                self.process.stdout.close()
+                self.process.wait()
+                
+                if self.process.returncode == 0:
+                    self.add_log("Word document created successfully!")
+                    self.status_var.set("Completed")
+                    
+                    # Clean up temp file
+                    if os.path.exists(temp_json_file):
+                        try:
+                            os.remove(temp_json_file)
+                        except:
+                            pass
+                    
+                    # Ask to open the output folder
+                    if messagebox.askyesno("Process Complete", "Word counting completed. Open the output folder?"):
+                        self.open_output_folder()
+                else:
+                    self.add_log("Failed to create Word document.")
+                    self.status_var.set("Partially completed")
             else:
                 self.add_log("Failed to create Excel file.")
-                
-            # Now run Word format
-            self.add_log("\nStep 2: Creating Word document...")
-            self.process = subprocess.Popen(
-                word_cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1
-            )
-            
-            # Read output line by line
-            for line in iter(self.process.stdout.readline, ''):
-                if line:
-                    self.add_log(line.strip())
-                    
-            self.process.stdout.close()
-            self.process.wait()
-            
-            if self.process.returncode == 0:
-                self.add_log("Word document created successfully!")
-                self.status_var.set("Completed")
-                
-                # Ask to open the output folder
-                if messagebox.askyesno("Process Complete", "Word counting completed. Open the output folder?"):
-                    self.open_output_folder()
-            else:
-                self.add_log("Failed to create Word document.")
-                self.status_var.set("Partially completed")
+                self.status_var.set("Failed")
                 
         except Exception as e:
-            self.add_log(f"Error: {str(e)}")
+            self.add_log("Error: {}".format(str(e)))
             self.status_var.set("Error")
+            
+            # Clean up temp file
+            if os.path.exists(temp_json_file):
+                try:
+                    os.remove(temp_json_file)
+                except:
+                    pass
+                    
         finally:
             self.process = None
             self.start_button.config(state=tk.NORMAL)

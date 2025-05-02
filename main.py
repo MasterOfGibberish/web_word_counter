@@ -21,6 +21,7 @@ import os
 import datetime
 import sys
 import shutil
+import json
 
 visited_urls = set()
 common_content = Counter()
@@ -122,11 +123,11 @@ def get_visible_text_selenium(driver, url, wait_time=5):
 def process_page(driver, url, wait_time, results, base_domain, progress_callback=None):
     """Process a single page with a specific driver."""
     if url in visited_urls:
-        return
+        return []
         
     url_domain = urlparse(url).netloc
     if url_domain != base_domain:
-        return
+        return []
         
     visited_urls.add(url)
     
@@ -135,7 +136,7 @@ def process_page(driver, url, wait_time, results, base_domain, progress_callback
     visible_text, links = get_visible_text_selenium(driver, fetch_url, wait_time)
     
     if not visible_text:
-        return [], []  # Empty text and links if there's an error
+        return []  # Empty list if there's an error
     
     if progress_callback:
         progress_callback()
@@ -278,7 +279,10 @@ def crawl_and_extract(base_url, limit=10, progress_bar=True, wait_time=5):
                 if new_links:
                     for link in new_links:
                         if link not in visited_urls and page_count < limit:
-                            work_queue.put(link)
+                            try:
+                                work_queue.put(link)
+                            except:
+                                pass  # Queue might be full
         else:
             # Process remaining pages in parallel
             def worker(driver_idx):
@@ -295,7 +299,8 @@ def crawl_and_extract(base_url, limit=10, progress_bar=True, wait_time=5):
                     new_links = process_page(driver, url, wait_time, extracted_texts, 
                                            base_domain, update_progress)
                     
-                    if new_links:
+                    # Make sure new_links is a list, not None
+                    if new_links and isinstance(new_links, list):
                         for link in new_links:
                             if link not in visited_urls and page_count < limit:
                                 try:
@@ -565,6 +570,49 @@ def save_to_docx(text_blocks, filename="website_text.docx", overwrite=False):
     
     return total_words
 
+def save_content_to_json(content, filename):
+    """Save extracted content to a JSON file for reuse."""
+    try:
+        # Convert content to a serializable format
+        serializable_content = []
+        for url, text, word_count in content:
+            serializable_content.append([url, text, word_count])
+            
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump({
+                'content': serializable_content,
+                'total_words': sum(item[2] for item in content),
+                'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }, f, ensure_ascii=False, indent=2)
+        
+        print("Content saved to JSON file: {}".format(filename))
+        return True
+    except Exception as e:
+        print("Error saving content to JSON: {}".format(e))
+        return False
+
+def load_content_from_json(filename):
+    """Load extracted content from a JSON file."""
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        content = []
+        for item in data.get('content', []):
+            if len(item) == 3:  # Make sure we have all three elements
+                content.append(tuple(item))
+        
+        total_words = data.get('total_words', sum(item[2] for item in content))
+        timestamp = data.get('timestamp', 'unknown')
+        
+        print("Content loaded from JSON file: {} (created: {})".format(filename, timestamp))
+        print("Loaded {} pages with {} total words".format(len(content), total_words))
+        
+        return content, total_words
+    except Exception as e:
+        print("Error loading content from JSON: {}".format(e))
+        return [], 0
+
 def main():
     parser = argparse.ArgumentParser(description="Web crawler that extracts text and provides word count for translation quotes")
     parser.add_argument("url", help="The base URL to crawl (e.g., https://example.com)")
@@ -574,6 +622,8 @@ def main():
     parser.add_argument("-t", "--threads", type=int, default=4, help="Number of threads to use (default: 4)")
     parser.add_argument("--format", choices=["excel", "docx"], default="excel", help="Output format (default: excel)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output file if it exists")
+    parser.add_argument("--save-json", help="Save crawled content to a JSON file for reuse")
+    parser.add_argument("--load-json", help="Load crawled content from a JSON file instead of crawling")
     
     args = parser.parse_args()
     
@@ -585,15 +635,28 @@ def main():
     if not os.path.isabs(args.output):
         args.output = get_default_output_path(args.output)
     
-    print("Starting crawl of {}...".format(args.url))
-    print("Using {} threads for faster processing.".format(MAX_THREADS))
+    content = []
+    total_words = 0
     
-    start_time = time.time()
-    content, total_words = crawl_and_extract(args.url, limit=args.limit, wait_time=args.wait)
-    end_time = time.time()
+    # Check if we should load content from JSON
+    if args.load_json and os.path.exists(args.load_json):
+        content, total_words = load_content_from_json(args.load_json)
     
-    print("Extracted text from {} pages in {:.1f} seconds.".format(len(content), end_time - start_time))
-    print("Total word count: {}".format(total_words))
+    # If no content was loaded, crawl the website
+    if not content:
+        print("Starting crawl of {}...".format(args.url))
+        print("Using {} threads for faster processing.".format(MAX_THREADS))
+        
+        start_time = time.time()
+        content, total_words = crawl_and_extract(args.url, limit=args.limit, wait_time=args.wait)
+        end_time = time.time()
+        
+        print("Extracted text from {} pages in {:.1f} seconds.".format(len(content), end_time - start_time))
+        print("Total word count: {}".format(total_words))
+        
+        # Save content to JSON if requested
+        if args.save_json:
+            save_content_to_json(content, args.save_json)
     
     # Choose the appropriate output format
     if args.format == "docx" or args.output.endswith(".docx"):
