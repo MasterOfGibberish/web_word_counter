@@ -10,6 +10,7 @@ A tool for crawling websites and generating word counts for translation cost est
 - Calculates accurate word counts for text content
 - Exports to Excel or Word format with comprehensive details
 - Handles errors gracefully with multiple fallback mechanisms
+- **User-friendly GUI interface** for easy operation
 
 ## Installation
 
@@ -26,6 +27,24 @@ pip install -r requirements.txt
 
 ## Usage
 
+### GUI Interface (Recommended)
+
+To use the graphical user interface, simply run:
+```
+python run.py
+```
+
+This will open a user-friendly window where you can:
+- Enter a website URL
+- Set the maximum pages to crawl
+- Choose the output format (Excel or Word)
+- Configure additional options
+- Monitor the crawling progress in real-time
+
+![GUI Screenshot](screenshot.png)
+
+### Command Line Interface
+
 Basic usage:
 ```
 python main.py https://example.com
@@ -34,6 +53,11 @@ python main.py https://example.com
 Advanced options:
 ```
 python main.py https://example.com -l 20 -o report.xlsx --format excel --overwrite
+```
+
+You can also use the launcher with arguments to access the command line interface:
+```
+python run.py https://example.com -l 20
 ```
 
 ### Command line options
@@ -61,6 +85,7 @@ The tool generates either:
 - Python 3.6 or higher
 - Chrome browser (for web rendering)
 - Python packages listed in requirements.txt
+- tkinter and ttkthemes (for GUI interface)
 
 ## License
 
