@@ -11,8 +11,8 @@ class WebWordCounterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Web Word Counter")
-        self.root.geometry("800x600")
-        self.root.minsize(750, 550)
+        self.root.geometry("700x500")
+        self.root.minsize(700, 500)  # Increased minimum size to ensure all elements are visible
         
         # Set icon if available
         try:
@@ -30,6 +30,7 @@ class WebWordCounterGUI:
         style.configure("TLabel", font=('Helvetica', 11))
         style.configure("Header.TLabel", font=('Helvetica', 12, 'bold'))
         style.configure("Title.TLabel", font=('Helvetica', 16, 'bold'))
+        style.configure("Action.TButton", padding=8, font=('Helvetica', 12, 'bold'))
         
     def create_widgets(self):
         # Main frame
@@ -40,42 +41,24 @@ class WebWordCounterGUI:
         title_label = ttk.Label(main_frame, text="Web Word Counter", style="Title.TLabel")
         title_label.pack(pady=(0, 20))
         
-        # Input frame
-        input_frame = ttk.LabelFrame(main_frame, text="Website Settings", padding="10 10 10 10")
-        input_frame.pack(fill=tk.X, pady=(0, 15))
+        # Top section - URL and action buttons
+        top_frame = ttk.Frame(main_frame)
+        top_frame.pack(fill=tk.X, pady=(0, 10))
         
         # URL input
-        url_frame = ttk.Frame(input_frame)
-        url_frame.pack(fill=tk.X, pady=5)
-        
-        url_label = ttk.Label(url_frame, text="Website URL:", width=15)
-        url_label.pack(side=tk.LEFT, padx=(0, 10))
+        url_label = ttk.Label(top_frame, text="Website URL:", width=12)
+        url_label.pack(side=tk.LEFT, padx=(0, 5))
         
         self.url_var = tk.StringVar()
-        self.url_entry = ttk.Entry(url_frame, textvariable=self.url_var, width=50)
-        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.url_entry = ttk.Entry(top_frame, textvariable=self.url_var, width=40)
+        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         
-        # Pages limit
-        limit_frame = ttk.Frame(input_frame)
-        limit_frame.pack(fill=tk.X, pady=5)
-        
-        limit_label = ttk.Label(limit_frame, text="Max Pages:", width=15)
-        limit_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.limit_var = tk.IntVar(value=10)
-        limit_spinner = ttk.Spinbox(limit_frame, from_=1, to=100, textvariable=self.limit_var, width=10)
-        limit_spinner.pack(side=tk.LEFT)
-        
-        # Wait time
-        wait_frame = ttk.Frame(input_frame)
-        wait_frame.pack(fill=tk.X, pady=5)
-        
-        wait_label = ttk.Label(wait_frame, text="Wait Time (sec):", width=15)
-        wait_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.wait_var = tk.IntVar(value=10)
-        wait_spinner = ttk.Spinbox(wait_frame, from_=1, to=30, textvariable=self.wait_var, width=10)
-        wait_spinner.pack(side=tk.LEFT)
+        # Start button - place it prominently in the top frame
+        self.start_button = ttk.Button(top_frame, text="START", 
+                                       command=self.start_counting, 
+                                       style="Action.TButton", 
+                                       width=12)
+        self.start_button.pack(side=tk.RIGHT, padx=(10, 0))
         
         # Output frame
         output_frame = ttk.LabelFrame(main_frame, text="Output Settings", padding="10 10 10 10")
@@ -85,41 +68,45 @@ class WebWordCounterGUI:
         file_frame = ttk.Frame(output_frame)
         file_frame.pack(fill=tk.X, pady=5)
         
-        file_label = ttk.Label(file_frame, text="Output File:", width=15)
+        file_label = ttk.Label(file_frame, text="Output Filename:", width=15)
         file_label.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.output_var = tk.StringVar(value="website_text.xlsx")
+        self.output_var = tk.StringVar(value="website_text")
         self.output_entry = ttk.Entry(file_frame, textvariable=self.output_var, width=40)
         self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         
         browse_button = ttk.Button(file_frame, text="Browse...", command=self.browse_output)
         browse_button.pack(side=tk.LEFT)
         
-        # Format selection
+        # Output format info
         format_frame = ttk.Frame(output_frame)
         format_frame.pack(fill=tk.X, pady=5)
         
-        format_label = ttk.Label(format_frame, text="Format:", width=15)
-        format_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.format_var = tk.StringVar(value="excel")
-        excel_radio = ttk.Radiobutton(format_frame, text="Excel", variable=self.format_var, value="excel")
-        excel_radio.pack(side=tk.LEFT, padx=(0, 10))
-        
-        word_radio = ttk.Radiobutton(format_frame, text="Word", variable=self.format_var, value="docx")
-        word_radio.pack(side=tk.LEFT)
+        format_info = ttk.Label(format_frame, 
+                               text="Both Excel (.xlsx) and Word (.docx) files will be created automatically")
+        format_info.pack(side=tk.LEFT, padx=(25, 0))
         
         # Overwrite option
         overwrite_frame = ttk.Frame(output_frame)
         overwrite_frame.pack(fill=tk.X, pady=5)
         
         self.overwrite_var = tk.BooleanVar(value=False)
-        overwrite_check = ttk.Checkbutton(overwrite_frame, text="Overwrite existing file", variable=self.overwrite_var)
+        overwrite_check = ttk.Checkbutton(overwrite_frame, text="Overwrite existing files", variable=self.overwrite_var)
         overwrite_check.pack(side=tk.LEFT, padx=(25, 0))
+        
+        # Button frame (for secondary buttons)
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_counting, width=15, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        open_button = ttk.Button(button_frame, text="Open Output Folder", command=self.open_output_folder, width=20)
+        open_button.pack(side=tk.RIGHT)
         
         # Status and log
         log_frame = ttk.LabelFrame(main_frame, text="Status Log", padding="10 10 10 10")
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Scrollable text widget for log
         self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD, bg="#f5f5f5")
@@ -130,21 +117,9 @@ class WebWordCounterGUI:
         self.log_text.config(yscrollcommand=scrollbar.set)
         
         # Set initial log message
-        self.log_text.insert(tk.END, "Welcome to Web Word Counter. Enter a URL and click 'Start' to begin.\n")
+        self.log_text.insert(tk.END, "Welcome to Web Word Counter. Enter a URL and click 'START' to begin.\n")
+        self.log_text.insert(tk.END, "All pages will be crawled automatically and results will be saved in both Excel and Word formats.\n")
         self.log_text.config(state=tk.DISABLED)
-        
-        # Buttons frame
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.start_button = ttk.Button(button_frame, text="Start", command=self.start_counting, width=15)
-        self.start_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_counting, width=15, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        open_button = ttk.Button(button_frame, text="Open Output Folder", command=self.open_output_folder, width=20)
-        open_button.pack(side=tk.RIGHT)
         
         # Status bar
         self.status_var = tk.StringVar(value="Ready")
@@ -161,25 +136,21 @@ class WebWordCounterGUI:
     def browse_output(self):
         initial_dir = os.path.dirname(os.path.abspath(self.output_var.get())) if os.path.isabs(self.output_var.get()) else os.getcwd()
         
-        file_types = [
-            ('Excel files', '*.xlsx'), 
-            ('Word documents', '*.docx'),
-            ('All files', '*.*')
-        ]
-        
         filename = filedialog.asksaveasfilename(
             initialdir=initial_dir,
             title="Save output as",
-            filetypes=file_types,
-            defaultextension=".xlsx" if self.format_var.get() == "excel" else ".docx"
+            filetypes=[('All files', '*.*')],
+            defaultextension=""
         )
         
         if filename:
+            # Remove any extension as we'll add our own
+            filename = os.path.splitext(filename)[0]
             self.output_var.set(filename)
             
     def open_output_folder(self):
         output_file = self.output_var.get()
-        if os.path.exists(output_file):
+        if os.path.exists(output_file + ".xlsx") or os.path.exists(output_file + ".docx"):
             folder_path = os.path.dirname(os.path.abspath(output_file))
         else:
             folder_path = os.getcwd()
@@ -211,35 +182,64 @@ class WebWordCounterGUI:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state=tk.DISABLED)
         
-        # Build command
-        cmd = [
+        # Get base output filename
+        base_output = self.output_var.get()
+        if not base_output:
+            base_output = "website_text"
+            self.output_var.set(base_output)
+        
+        # Generate Excel and Word filenames
+        excel_output = base_output + ".xlsx"
+        word_output = base_output + ".docx"
+        
+        # Run Excel version first
+        self.add_log(f"Starting web crawl for {url}")
+        self.add_log("Crawling ALL pages on the website - this may take a while...")
+        self.add_log(f"Will save as Excel: {excel_output}")
+        self.add_log(f"Will save as Word: {word_output}")
+        self.add_log("Processing... please wait\n")
+        
+        # Build commands for both formats, setting very high limit
+        excel_cmd = [
             sys.executable, 
             'main.py',
             url,
-            '-l', str(self.limit_var.get()),
-            '-w', str(self.wait_var.get()),
-            '-o', self.output_var.get(),
-            '--format', self.format_var.get()
+            '-l', '9999',  # Very high limit to get all pages
+            '-w', '20',    # Longer wait time for better page loading
+            '-o', excel_output,
+            '--format', 'excel'
+        ]
+        
+        word_cmd = [
+            sys.executable, 
+            'main.py',
+            url,
+            '-l', '9999',  # Very high limit to get all pages
+            '-w', '20',    # Longer wait time for better page loading
+            '-o', word_output,
+            '--format', 'docx'
         ]
         
         if self.overwrite_var.get():
-            cmd.append('--overwrite')
-            
-        self.add_log(f"Starting web crawl for {url}")
-        self.add_log(f"Max pages: {self.limit_var.get()}")
-        self.add_log(f"Output file: {self.output_var.get()}")
-        self.add_log(f"Format: {self.format_var.get()}")
-        self.add_log("Processing... please wait\n")
+            excel_cmd.append('--overwrite')
+            word_cmd.append('--overwrite')
         
         # Run in a separate thread
-        self.process_thread = threading.Thread(target=self.run_process, args=(cmd,))
+        self.process_thread = threading.Thread(
+            target=self.run_process_both_formats, 
+            args=(excel_cmd, word_cmd)
+        )
         self.process_thread.daemon = True
         self.process_thread.start()
             
-    def run_process(self, cmd):
+    def run_process_both_formats(self, excel_cmd, word_cmd):
+        excel_success = False
+        
         try:
+            # First run Excel format
+            self.add_log("Step 1: Creating Excel file...")
             self.process = subprocess.Popen(
-                cmd, 
+                excel_cmd, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
@@ -255,20 +255,39 @@ class WebWordCounterGUI:
             self.process.wait()
             
             if self.process.returncode == 0:
-                self.add_log("\nProcess completed successfully!")
+                self.add_log("Excel file created successfully!")
+                excel_success = True
+            else:
+                self.add_log("Failed to create Excel file.")
+                
+            # Now run Word format
+            self.add_log("\nStep 2: Creating Word document...")
+            self.process = subprocess.Popen(
+                word_cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            
+            # Read output line by line
+            for line in iter(self.process.stdout.readline, ''):
+                if line:
+                    self.add_log(line.strip())
+                    
+            self.process.stdout.close()
+            self.process.wait()
+            
+            if self.process.returncode == 0:
+                self.add_log("Word document created successfully!")
                 self.status_var.set("Completed")
                 
-                output_file = self.output_var.get()
-                if os.path.exists(output_file):
-                    output_size = os.path.getsize(output_file) / 1024
-                    self.add_log(f"Output file created: {output_file} ({output_size:.1f} KB)")
-                    
-                    # Ask to open the file
-                    if messagebox.askyesno("Process Complete", "Word counting completed. Open the output file?"):
-                        self.open_output_file(output_file)
+                # Ask to open the output folder
+                if messagebox.askyesno("Process Complete", "Word counting completed. Open the output folder?"):
+                    self.open_output_folder()
             else:
-                self.add_log("\nProcess failed.")
-                self.status_var.set("Failed")
+                self.add_log("Failed to create Word document.")
+                self.status_var.set("Partially completed")
                 
         except Exception as e:
             self.add_log(f"Error: {str(e)}")

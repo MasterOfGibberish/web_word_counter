@@ -6,12 +6,14 @@ from tqdm import tqdm
 import re
 import argparse
 import time
+import threading
+import queue
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from collections import Counter
 import difflib
 import pandas as pd
@@ -22,6 +24,7 @@ import shutil
 
 visited_urls = set()
 common_content = Counter()
+MAX_THREADS = 4  # Number of parallel threads to use
 
 # Get the directory where the script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) or os.getcwd()
@@ -35,22 +38,27 @@ def normalize_url(url):
     if normalized.endswith(('/index.html', '/index.php', '/index.asp')):
         normalized = normalized[:-10]  # Remove the index filename
     # Remove query strings and fragments if needed
-    # normalized = normalized.split('?')[0].split('#')[0]
+    normalized = normalized.split('?')[0].split('#')[0]
     return normalized
 
 def setup_driver():
-    """Set up and return a headless Chrome driver."""
+    """Set up and return a headless Chrome driver with optimized settings."""
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--window-size=1280,720")  # Smaller window size
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-images")  # Don't load images
+    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+    chrome_options.add_argument("--disable-javascript")  # Optional: can break some sites
     
     driver = webdriver.Chrome(options=chrome_options)
+    driver.set_page_load_timeout(15)  # Maximum page load time
     return driver
 
-def get_visible_text_selenium(driver, url, wait_time=10):
+def get_visible_text_selenium(driver, url, wait_time=5):
     """Get visible text from a page using Selenium with wait for page load."""
     try:
         driver.get(url)
@@ -60,8 +68,8 @@ def get_visible_text_selenium(driver, url, wait_time=10):
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
         
-        # Additional wait for dynamic content
-        time.sleep(3)  # Give extra time for JavaScript to render
+        # Additional wait for dynamic content - reduced
+        time.sleep(1)  # Give extra time for JavaScript to render
         
         # Get the page source after JavaScript execution
         html = driver.page_source
@@ -100,9 +108,46 @@ def get_visible_text_selenium(driver, url, wait_time=10):
     except TimeoutException:
         print(f"Timeout waiting for page to load: {url}")
         return "", []
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
+    except WebDriverException as e:
+        print(f"WebDriver error for {url}: {str(e).split('\n')[0]}")
         return "", []
+    except Exception as e:
+        print(f"Error fetching {url}: {str(e).split('\n')[0]}")
+        return "", []
+
+def process_page(driver, url, wait_time, results, base_domain, progress_callback=None):
+    """Process a single page with a specific driver."""
+    if url in visited_urls:
+        return
+        
+    url_domain = urlparse(url).netloc
+    if url_domain != base_domain:
+        return
+        
+    visited_urls.add(url)
+    
+    # Use the original URL format for fetching
+    fetch_url = url
+    visible_text, links = get_visible_text_selenium(driver, fetch_url, wait_time)
+    
+    if not visible_text:
+        return [], []  # Empty text and links if there's an error
+    
+    if progress_callback:
+        progress_callback()
+    
+    results.append((url, visible_text, 0))  # Temporary 0 for word count
+    
+    # Return new links to visit
+    new_links = []
+    for link in links:
+        normalized_link = normalize_url(link)
+        if normalized_link not in visited_urls:
+            url_domain = urlparse(normalized_link).netloc
+            if url_domain == base_domain:
+                new_links.append(normalized_link)
+    
+    return new_links
 
 def detect_common_text_chunks(text_list, min_pages=2, chunk_size=50):
     """Detect text chunks that appear on multiple pages."""
@@ -112,7 +157,8 @@ def detect_common_text_chunks(text_list, min_pages=2, chunk_size=50):
     
     for text in text_list:
         words = re.findall(r'\w+', text.lower())
-        chunks = [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+        # Use fewer chunks to speed up processing
+        chunks = [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size*2)]
         chunked_texts.append(chunks)
     
     # Find chunks that appear in multiple pages
@@ -148,62 +194,128 @@ def count_words(text):
     words = re.findall(r'\w+', text.lower())
     return len(words)
 
-def crawl_and_extract(base_url, limit=10, progress_bar=True, wait_time=10):
+def crawl_and_extract(base_url, limit=10, progress_bar=True, wait_time=5):
+    """Crawl website and extract text with optimized multi-threading approach."""
     # Normalize the base URL
     normalized_base_url = normalize_url(base_url)
-    to_visit = [normalized_base_url]
+    base_domain = urlparse(normalized_base_url).netloc
+    
+    to_visit = queue.Queue()
+    to_visit.put(normalized_base_url)
+    
     extracted_texts = []
     raw_texts = []  # Store raw texts for common content detection
     total_word_count = 0
     visited_urls.clear()  # Clear global visited URLs
     common_content.clear()  # Clear global common content counter
     
-    # Set up the Selenium driver
-    driver = setup_driver()
+    # Set up multiple drivers for parallel processing
+    num_threads = min(MAX_THREADS, limit)
+    drivers = []
+    for _ in range(num_threads):
+        try:
+            drivers.append(setup_driver())
+        except Exception as e:
+            print(f"Error creating WebDriver: {e}")
+            # If we can't create all drivers, just use what we have
+            break
+    
+    if not drivers:
+        print("Failed to create any WebDrivers. Exiting.")
+        return [], 0
     
     try:
         pbar = tqdm(total=limit, desc="Pages crawled") if progress_bar else None
-    
-        while to_visit and len(visited_urls) < limit:
-            url = to_visit.pop(0)
-    
-            if url in visited_urls:
-                continue
-    
-            # Skip URLs that are not in the same domain
-            base_domain = urlparse(normalized_base_url).netloc
-            url_domain = urlparse(url).netloc
-            if url_domain != base_domain:
-                continue
-                
-            visited_urls.add(url)
-            if not progress_bar:
-                print(f"Crawling: {url}")
-            
-            # Use the original URL format for fetching
-            fetch_url = url
-            visible_text, links = get_visible_text_selenium(driver, fetch_url, wait_time)
-            
-            if not visible_text:
-                continue
-                
-            # Store raw text for later processing
-            raw_texts.append(visible_text)
-            extracted_texts.append((url, visible_text, 0))  # Temporary 0 for word count
-    
-            # Add new links to visit
-            for link in links:
-                normalized_link = normalize_url(link)
-                if normalized_link not in visited_urls and normalized_link not in to_visit:
-                    url_domain = urlparse(normalized_link).netloc
-                    if url_domain == base_domain:
-                        to_visit.append(normalized_link)
-            
+        page_count = 0
+        
+        # Function to update progress bar
+        def update_progress():
+            nonlocal page_count
+            page_count += 1
             if pbar:
                 pbar.update(1)
+                
+        # Process pages with a timeout
+        max_time = 180  # Maximum 3 minutes total processing time
+        start_time = time.time()
+        
+        # Process first few pages sequentially to get initial links
+        driver = drivers[0]
+        while not to_visit.empty() and page_count < min(5, limit) and time.time() - start_time < max_time:
+            url = to_visit.get()
+            if url in visited_urls:
+                continue
+                
+            new_links = process_page(driver, url, wait_time, extracted_texts, 
+                                     base_domain, update_progress)
+            
+            if new_links:
+                for link in new_links:
+                    if link not in visited_urls:
+                        to_visit.put(link)
+        
+        # Create a shared queue for remaining work
+        work_queue = queue.Queue()
+        while not to_visit.empty() and page_count < limit:
+            url = to_visit.get()
+            if url not in visited_urls:
+                work_queue.put(url)
+        
+        # If there's not much work, don't use threading
+        if work_queue.qsize() < 3:
+            while not work_queue.empty() and page_count < limit and time.time() - start_time < max_time:
+                url = work_queue.get()
+                if url in visited_urls:
+                    continue
+                    
+                new_links = process_page(drivers[0], url, wait_time, extracted_texts, 
+                                        base_domain, update_progress)
+                
+                if new_links:
+                    for link in new_links:
+                        if link not in visited_urls and page_count < limit:
+                            work_queue.put(link)
+        else:
+            # Process remaining pages in parallel
+            def worker(driver_idx):
+                driver = drivers[driver_idx]
+                while not work_queue.empty() and page_count < limit and time.time() - start_time < max_time:
+                    try:
+                        url = work_queue.get(block=False)
+                    except queue.Empty:
+                        break
+                        
+                    if url in visited_urls:
+                        continue
+                        
+                    new_links = process_page(driver, url, wait_time, extracted_texts, 
+                                           base_domain, update_progress)
+                    
+                    if new_links:
+                        for link in new_links:
+                            if link not in visited_urls and page_count < limit:
+                                try:
+                                    work_queue.put(link)
+                                except:
+                                    pass  # Queue might be full
+            
+            # Start worker threads
+            threads = []
+            for i in range(len(drivers)):
+                t = threading.Thread(target=worker, args=(i,))
+                t.daemon = True
+                threads.append(t)
+                t.start()
+                
+            # Wait for all threads to complete
+            for t in threads:
+                t.join(timeout=max(1, max_time - (time.time() - start_time)))
         
         if pbar:
             pbar.close()
+            
+        # Get the text content from results
+        raw_texts = [text for _, text, _ in extracted_texts]
             
         # Post-processing: detect and remove common text chunks
         if len(raw_texts) > 1:
@@ -220,8 +332,12 @@ def crawl_and_extract(base_url, limit=10, progress_bar=True, wait_time=10):
             
             extracted_texts = cleaned_texts
     finally:
-        # Always close the driver
-        driver.quit()
+        # Always close the drivers
+        for driver in drivers:
+            try:
+                driver.quit()
+            except:
+                pass
     
     return extracted_texts, total_word_count
 
@@ -447,19 +563,29 @@ def main():
     parser.add_argument("url", help="The base URL to crawl (e.g., https://example.com)")
     parser.add_argument("-l", "--limit", type=int, default=10, help="Maximum number of pages to crawl (default: 10)")
     parser.add_argument("-o", "--output", default="website_text.xlsx", help="Output filename (default: website_text.xlsx)")
-    parser.add_argument("-w", "--wait", type=int, default=10, help="Wait time in seconds for page loading (default: 10)")
+    parser.add_argument("-w", "--wait", type=int, default=5, help="Wait time in seconds for page loading (default: 5)")
+    parser.add_argument("-t", "--threads", type=int, default=4, help="Number of threads to use (default: 4)")
     parser.add_argument("--format", choices=["excel", "docx"], default="excel", help="Output format (default: excel)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output file if it exists")
     
     args = parser.parse_args()
+    
+    # Update the global thread count
+    global MAX_THREADS
+    MAX_THREADS = max(1, min(8, args.threads))
     
     # If output path is not absolute, make it relative to the script directory
     if not os.path.isabs(args.output):
         args.output = get_default_output_path(args.output)
     
     print(f"Starting crawl of {args.url}...")
+    print(f"Using {MAX_THREADS} threads for faster processing.")
+    
+    start_time = time.time()
     content, total_words = crawl_and_extract(args.url, limit=args.limit, wait_time=args.wait)
-    print(f"Extracted text from {len(content)} pages.")
+    end_time = time.time()
+    
+    print(f"Extracted text from {len(content)} pages in {end_time - start_time:.1f} seconds.")
     print(f"Total word count: {total_words}")
     
     # Choose the appropriate output format
