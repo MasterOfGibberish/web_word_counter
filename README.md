@@ -25,6 +25,14 @@ cd web_word_counter
 pip install -r requirements.txt
 ```
 
+## Python Version Compatibility
+
+This tool is compatible with:
+- Python 3.5+ (all features)
+- Python 3.4+ (may require modifying f-strings)
+
+If you experience syntax errors related to f-strings when running on older Python versions, the program has been updated to use the older string formatting style.
+
 ## Usage
 
 ### GUI Interface (Recommended)
@@ -65,7 +73,8 @@ python run.py https://example.com -l 20
 - `url` - The website URL to crawl (required)
 - `-l, --limit` - Maximum number of pages to crawl (default: 10)
 - `-o, --output` - Output filename (default: website_text.xlsx)
-- `-w, --wait` - Wait time in seconds for page loading (default: 10)
+- `-w, --wait` - Wait time in seconds for page loading (default: 5)
+- `-t, --threads` - Number of threads to use for parallel processing (default: 4)
 - `--format` - Output format: "excel" or "docx" (default: excel) 
 - `--overwrite` - Overwrite existing output file if it exists
 
@@ -82,10 +91,17 @@ The tool generates either:
 
 ## Requirements
 
-- Python 3.6 or higher
+- Python 3.5 or higher recommended (3.4+ with modifications)
 - Chrome browser (for web rendering)
 - Python packages listed in requirements.txt
 - tkinter and ttkthemes (for GUI interface)
+
+## Troubleshooting
+
+If you encounter errors like `SyntaxError: f-string expression part cannot include a backslash`, you are likely using an older version of Python (before 3.6). The program has been updated to use older string formatting, but if you still encounter issues, please:
+
+1. Update to Python 3.6 or newer if possible
+2. Or run with the `-t 1` option to disable multi-threading which may help with some compatibility issues
 
 ## License
 

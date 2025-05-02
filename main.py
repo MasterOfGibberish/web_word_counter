@@ -33,7 +33,7 @@ def normalize_url(url):
     """Normalize URL to prevent duplicates with different formats."""
     parsed = urlparse(url)
     # Remove trailing slashes, convert to lowercase
-    normalized = f"{parsed.scheme}://{parsed.netloc.lower()}{parsed.path.rstrip('/')}"
+    normalized = "{0}://{1}{2}".format(parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip('/'))
     # Remove common index files
     if normalized.endswith(('/index.html', '/index.php', '/index.asp')):
         normalized = normalized[:-10]  # Remove the index filename
@@ -106,13 +106,17 @@ def get_visible_text_selenium(driver, url, wait_time=5):
         return visible_text, links
         
     except TimeoutException:
-        print(f"Timeout waiting for page to load: {url}")
+        print("Timeout waiting for page to load: {}".format(url))
         return "", []
     except WebDriverException as e:
-        print(f"WebDriver error for {url}: {str(e).split('\n')[0]}")
+        # Fix: Avoid backslash in f-string by using str.format() instead
+        error_msg = str(e).split('\n')[0] if '\n' in str(e) else str(e)
+        print("WebDriver error for {}: {}".format(url, error_msg))
         return "", []
     except Exception as e:
-        print(f"Error fetching {url}: {str(e).split('\n')[0]}")
+        # Fix: Avoid backslash in f-string by using str.format() instead
+        error_msg = str(e).split('\n')[0] if '\n' in str(e) else str(e)
+        print("Error fetching {}: {}".format(url, error_msg))
         return "", []
 
 def process_page(driver, url, wait_time, results, base_domain, progress_callback=None):
@@ -216,7 +220,7 @@ def crawl_and_extract(base_url, limit=10, progress_bar=True, wait_time=5):
         try:
             drivers.append(setup_driver())
         except Exception as e:
-            print(f"Error creating WebDriver: {e}")
+            print("Error creating WebDriver: {}".format(e))
             # If we can't create all drivers, just use what we have
             break
     
@@ -362,7 +366,7 @@ def ensure_directory_exists(filepath):
         os.makedirs(directory, exist_ok=True)
         return True
     except Exception as e:
-        print(f"Warning: Could not create directory '{directory}': {e}")
+        print("Warning: Could not create directory '{}': {}".format(directory, e))
         # Return False to indicate failure
         return False
 
@@ -373,7 +377,7 @@ def get_unique_filename(filename):
         
     base, ext = os.path.splitext(filename)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{base}_{timestamp}{ext}"
+    return "{}_{}{}".format(base, timestamp, ext)
 
 def check_file_exists(filename, overwrite=False):
     """Check if file exists and handle accordingly."""
@@ -382,17 +386,17 @@ def check_file_exists(filename, overwrite=False):
             try:
                 # Try to remove the file first to ensure we can write to it
                 os.remove(filename)
-                print(f"Removed existing file '{filename}' for overwriting.")
+                print("Removed existing file '{}' for overwriting.".format(filename))
             except Exception as e:
-                print(f"Warning: Could not remove existing file '{filename}': {e}")
+                print("Warning: Could not remove existing file '{}': {}".format(filename, e))
                 # If failed to remove, create a unique name
                 new_name = get_unique_filename(filename)
-                print(f"Using alternative filename: {new_name}")
+                print("Using alternative filename: {}".format(new_name))
                 return new_name
             return filename
         else:
             new_filename = get_unique_filename(filename)
-            print(f"File '{filename}' already exists. Saving as '{new_filename}' instead.")
+            print("File '{}' already exists. Saving as '{}' instead.".format(filename, new_filename))
             return new_filename
     return filename
 
@@ -405,7 +409,7 @@ def save_to_excel(text_blocks, filename="website_text.xlsx", overwrite=False):
     if not ensure_directory_exists(filename):
         # If can't create directory, save to script directory instead
         filename = os.path.join(SCRIPT_DIR, os.path.basename(filename))
-        print(f"Saving to script directory instead: {filename}")
+        print("Saving to script directory instead: {}".format(filename))
         ensure_directory_exists(filename)  # Create script directory if needed
     
     # Check if file exists and get appropriate filename
@@ -451,30 +455,31 @@ def save_to_excel(text_blocks, filename="website_text.xlsx", overwrite=False):
                         else:
                             worksheet.column_dimensions[chr(67)].width = 15   # Column C
         
-        print(f"Excel file saved successfully as '{filename}'")
+        print("Excel file saved successfully as '{}'".format(filename))
         return total_words
     except Exception as e:
-        print(f"Error saving to Excel: {e}")
+        print("Error saving to Excel: {}".format(e))
         
         # Fallback to CSV if Excel fails
         try:
             csv_filename = os.path.splitext(filename)[0] + '.csv'
             csv_filename = check_file_exists(csv_filename, overwrite)
             pd.DataFrame(data).to_csv(csv_filename, index=False)
-            print(f"Saved as CSV instead: {csv_filename}")
+            print("Saved as CSV instead: {}".format(csv_filename))
         except Exception as csv_error:
-            print(f"Error saving to CSV: {csv_error}")
+            print("Error saving to CSV: {}".format(csv_error))
             # Last resort: save to a very basic text file
-            txt_filename = os.path.join(SCRIPT_DIR, f"website_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            txt_filename = os.path.join(SCRIPT_DIR, "website_data_{}.txt".format(
+                datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
             try:
                 with open(txt_filename, 'w', encoding='utf-8') as f:
-                    f.write(f"Total Pages: {len(text_blocks)}\n")
-                    f.write(f"Total Word Count: {total_words}\n\n")
+                    f.write("Total Pages: {}\n".format(len(text_blocks)))
+                    f.write("Total Word Count: {}\n\n".format(total_words))
                     for url, _, word_count in text_blocks:
-                        f.write(f"URL: {url}\nWord Count: {word_count}\n\n")
-                print(f"Saved as text file instead: {txt_filename}")
+                        f.write("URL: {}\nWord Count: {}\n\n".format(url, word_count))
+                print("Saved as text file instead: {}".format(txt_filename))
             except Exception as txt_error:
-                print(f"Failed to save data in any format. Error: {txt_error}")
+                print("Failed to save data in any format. Error: {}".format(txt_error))
         
         return total_words
 
@@ -487,7 +492,7 @@ def save_to_docx(text_blocks, filename="website_text.docx", overwrite=False):
     if not ensure_directory_exists(filename):
         # If can't create directory, save to script directory instead
         filename = os.path.join(SCRIPT_DIR, os.path.basename(filename))
-        print(f"Saving to script directory instead: {filename}")
+        print("Saving to script directory instead: {}".format(filename))
         ensure_directory_exists(filename)  # Create script directory if needed
     
     # Check if file exists and get appropriate filename
@@ -497,10 +502,10 @@ def save_to_docx(text_blocks, filename="website_text.docx", overwrite=False):
     
     # Add summary at the beginning
     doc.add_heading("Website Text Extraction Summary", level=1)
-    doc.add_paragraph(f"Total pages extracted: {len(text_blocks)}")
+    doc.add_paragraph("Total pages extracted: {}".format(len(text_blocks)))
     
     total_words = sum(word_count for _, _, word_count in text_blocks)
-    doc.add_paragraph(f"Total word count: {total_words}")
+    doc.add_paragraph("Total word count: {}".format(total_words))
     
     # Add table of contents with word counts
     doc.add_heading("Pages and Word Counts", level=2)
@@ -524,37 +529,39 @@ def save_to_docx(text_blocks, filename="website_text.docx", overwrite=False):
     
     # Add page content
     for i, (url, text, word_count) in enumerate(text_blocks, 1):
-        doc.add_heading(f"Page {i}: {url}", level=2)
-        doc.add_paragraph(f"Word count: {word_count}")
+        doc.add_heading("Page {}: {}".format(i, url), level=2)
+        doc.add_paragraph("Word count: {}".format(word_count))
         doc.add_paragraph(text)
         doc.add_page_break()
     
     try:
         doc.save(filename)
-        print(f"Word document saved successfully as '{filename}'")
+        print("Word document saved successfully as '{}'".format(filename))
     except Exception as e:
-        print(f"Error saving Word document: {e}")
+        print("Error saving Word document: {}".format(e))
         
         # Try saving to the script directory with a different name
-        backup_filename = os.path.join(SCRIPT_DIR, f"backup_{os.path.basename(filename)}")
+        backup_filename = os.path.join(SCRIPT_DIR, "backup_{}".format(os.path.basename(filename)))
         try:
             doc.save(backup_filename)
-            print(f"Saved Word document to alternative location: {backup_filename}")
+            print("Saved Word document to alternative location: {}".format(backup_filename))
         except Exception as e2:
-            print(f"Failed to save Word document as backup. Error: {e2}")
+            print("Failed to save Word document as backup. Error: {}".format(e2))
             
             # Last resort: save to a basic text file
-            txt_filename = os.path.join(SCRIPT_DIR, f"website_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            txt_filename = os.path.join(SCRIPT_DIR, "website_data_{}.txt".format(
+                datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
             try:
                 with open(txt_filename, 'w', encoding='utf-8') as f:
-                    f.write(f"Total Pages: {len(text_blocks)}\n")
-                    f.write(f"Total Word Count: {total_words}\n\n")
+                    f.write("Total Pages: {}\n".format(len(text_blocks)))
+                    f.write("Total Word Count: {}\n\n".format(total_words))
                     for url, text_content, word_count in text_blocks:
-                        f.write(f"URL: {url}\nWord Count: {word_count}\n\n")
-                        f.write(f"Content Preview (first 500 chars): {text_content[:500]}...\n\n")
-                print(f"Saved as text file instead: {txt_filename}")
+                        f.write("URL: {}\nWord Count: {}\n\n".format(url, word_count))
+                        preview = text_content[:500] + "..." if len(text_content) > 500 else text_content
+                        f.write("Content Preview: {}\n\n".format(preview))
+                print("Saved as text file instead: {}".format(txt_filename))
             except Exception as txt_error:
-                print(f"Failed to save data in any format. Error: {txt_error}")
+                print("Failed to save data in any format. Error: {}".format(txt_error))
     
     return total_words
 
@@ -578,15 +585,15 @@ def main():
     if not os.path.isabs(args.output):
         args.output = get_default_output_path(args.output)
     
-    print(f"Starting crawl of {args.url}...")
-    print(f"Using {MAX_THREADS} threads for faster processing.")
+    print("Starting crawl of {}...".format(args.url))
+    print("Using {} threads for faster processing.".format(MAX_THREADS))
     
     start_time = time.time()
     content, total_words = crawl_and_extract(args.url, limit=args.limit, wait_time=args.wait)
     end_time = time.time()
     
-    print(f"Extracted text from {len(content)} pages in {end_time - start_time:.1f} seconds.")
-    print(f"Total word count: {total_words}")
+    print("Extracted text from {} pages in {:.1f} seconds.".format(len(content), end_time - start_time))
+    print("Total word count: {}".format(total_words))
     
     # Choose the appropriate output format
     if args.format == "docx" or args.output.endswith(".docx"):
@@ -603,10 +610,11 @@ def main():
     # Final verification message
     if os.path.exists(output_file):
         file_size = os.path.getsize(output_file) / 1024  # Size in KB
-        print(f"SUCCESS: Output file '{output_file}' (size: {file_size:.1f} KB) has been created successfully.")
-        print(f"Location: {os.path.abspath(output_file)}")
+        print("SUCCESS: Output file '{}' (size: {:.1f} KB) has been created successfully.".format(
+            output_file, file_size))
+        print("Location: {}".format(os.path.abspath(output_file)))
     else:
-        print(f"WARNING: Could not verify that output file '{output_file}' was created.")
+        print("WARNING: Could not verify that output file '{}' was created.".format(output_file))
         print("Check the script directory for alternative output files that may have been created.")
 
 # --- USAGE ---
